@@ -167,11 +167,9 @@ updateParticlesFromVideo() {
       const g = pixels[i + 1];
       const b = pixels[i + 2];
       const a = pixels[i + 3];
-      
-      // アルファ値が閾値以上、または白背景でない場合
-      // 白背景用: RGBが全て250以上は除外
+
       const isWhiteBackground = r > 250 && g > 250 && b > 250;
-      
+
       if (a > this.ALPHA_THRESHOLD && !isWhiteBackground) {
         // 座標を -1.0 ~ 1.0 の範囲に正規化
         const normalizedX = (x / width) * 2.0 - 1.0;
@@ -230,17 +228,6 @@ updateParticlesFromVideo() {
       [this.canvas.width, this.canvas.height],
       time,
     ]);
-
-    // パーティクルが存在する場合のみ描画
-    if (this.position.length > 0) {
-      this.shaderProgram.use();
-      this.shaderProgram.setAttribute(this.vbo);
-      this.shaderProgram.setUniform([
-        this.uMouse,
-        [this.canvas.width, this.canvas.height],
-        time,
-      ]);
-    }
 
     // 設定済みの情報を使って、頂点を画面にレンダリングする
     gl.drawArrays(gl.POINTS, 0, this.position.length / 3);

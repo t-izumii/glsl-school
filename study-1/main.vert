@@ -17,20 +17,15 @@ void main() {
 
   vec2 toMouse = correctedMouse - correctedPosition;
   float distanceToMouse = length(toMouse);
-
-  // 爆発的な力
   float explosion = exp(-distanceToMouse * 2.0);
 
-  // ランダム性を加える
   float randomOffset = sin(position.x * 100.0) * cos(position.y * 100.0);
   float explosionTime = sin(time * 4.0 + randomOffset * 3.14) * 0.5 + 0.5;
 
-  // 放射状に吹き飛ばす
   vec2 normalizedToMouse = normalize(toMouse);
   vec2 offset = -normalizedToMouse * explosion * explosionTime * 0.8;
   offset.x /= aspect;
 
-  // 爆発で飛び出す
   float zOffset = explosion * explosionTime * 3.0;
 
   vec3 p = vec3(position.xy + offset, position.z + zOffset);
