@@ -1,37 +1,100 @@
-attribute vec3 position;
-attribute vec4 color;
-uniform vec2 mouse;
-uniform vec2 resolution;
-uniform float time;
+// ========================================
+// パーティクル用頂点シェーダー
+// 動画の各ピクセルをパーティクルとして表示
+// マウス位置に応じてパーティクルが反応する
+// ========================================
 
-varying vec4 vColor;
+// 頂点属性: CPUから受け取るデータ
+attribute vec3 position;  // パーティクルの位置 (x, y, z)
+attribute vec4 color;     // パーティクルの色 (r, g, b, a)
+
+// Uniform変数: すべての頂点で共通の値
+uniform vec2 mouse;       // マウス位置 (-1.0 ~ 1.0)
+uniform vec2 resolution;  // 画面解像度 (width, height)
+uniform float time;       // 経過時間（秒）
+
+// Varying変数: フラグメントシェーダーに渡す値
+varying vec4 vColor;      // パーティクルの色をフラグメントシェーダーに渡す
 
 void main() {
+  // ========================================
+  // 1. アスペクト比の補正
+  // ========================================
+  // 画面の縦横比を計算（横幅 / 縦幅）
   float aspect = resolution.x / resolution.y;
 
+  // パーティクルの位置をアスペクト比で補正
+  // X座標だけを補正することで、円形の影響範囲が楕円にならないようにする
   vec2 correctedPosition = position.xy;
   correctedPosition.x *= aspect;
 
+  // マウス位置もアスペクト比で補正
   vec2 correctedMouse = mouse;
   correctedMouse.x *= aspect;
 
+  // ========================================
+  // 2. マウスとの距離に基づく影響度の計算
+  // ========================================
+  // パーティクルからマウスへのベクトル
   vec2 toMouse = correctedMouse - correctedPosition;
+
+  // マウスとの距離（0.0 ~ ∞）
   float distanceToMouse = length(toMouse);
+
+  // 距離に基づく影響度（0.0 ~ 1.0）
+  // exp() を使うことで、近いほど強く、遠いほど急激に弱くなる
+  // マウスに近い: 1.0に近い値、遠い: 0.0に近い値
   float explosion = exp(-distanceToMouse * 2.0);
 
+  // ========================================
+  // 3. 時間による波のアニメーション
+  // ========================================
+  // 各パーティクルごとにランダムなオフセット値を生成
+  // 位置に基づいた疑似ランダム値（-1.0 ~ 1.0）
   float randomOffset = sin(position.x * 100.0) * cos(position.y * 100.0);
+
+  // 時間とランダムオフセットを使って波のような動き（0.0 ~ 1.0）
+  // sin() の結果 (-1.0 ~ 1.0) を 0.5 倍して 0.5 を足すことで 0.0 ~ 1.0 の範囲に変換
   float explosionTime = sin(time * 4.0 + randomOffset * 3.14) * 0.5 + 0.5;
 
+  // ========================================
+  // 4. パーティクルの位置オフセット計算
+  // ========================================
+  // マウスへの方向ベクトルを正規化（長さ1のベクトル）
   vec2 normalizedToMouse = normalize(toMouse);
-  vec2 offset = vec2(randomOffset , randomOffset) * explosionTime * 0.1;
+
+  // ランダムな動きを作成（時間で変化）
+  // explosionTime を使って波のような動きをシミュレート
+  vec2 offset = vec2(randomOffset, randomOffset) * explosionTime * 0.1;
+
+  // X方向のオフセットをアスペクト比で補正（元の座標系に戻す）
   offset.x /= aspect;
 
+  // ========================================
+  // 5. Z方向（奥行き）のオフセット
+  // ========================================
+  // 時間によって前後に動くエフェクト
   float zOffset = explosionTime * 3.0;
 
+  // ========================================
+  // 6. 最終的な頂点位置の決定
+  // ========================================
+  // オリジナルの位置 + XYオフセット + Zオフセット
   vec3 p = vec3(position.xy + offset, position.z + zOffset);
+
+  // 最終的なクリップ空間座標を設定（WebGLに渡す最終位置）
   gl_Position = vec4(p, 1.0);
+
+  // ========================================
+  // 7. フラグメントシェーダーに色を渡す
+  // ========================================
   vColor = vec4(color);
 
-  // マウスに近いほど小さくなる
-  gl_PointSize = mix(15.0, 30.0, explosion);
+  // ========================================
+  // 8. パーティクルのサイズを設定
+  // ========================================
+  // マウスに近いほど大きくなる
+  // explosion が 0.0（遠い）: 15.0ピクセル
+  // explosion が 1.0（近い）: 30.0ピクセル
+  gl_PointSize = mix(18.0, 60.0, explosion);
 }
