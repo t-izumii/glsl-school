@@ -23,16 +23,15 @@ void main() {
   float explosionTime = sin(time * 4.0 + randomOffset * 3.14) * 0.5 + 0.5;
 
   vec2 normalizedToMouse = normalize(toMouse);
-  vec2 offset = -normalizedToMouse * explosion * explosionTime * 0.8;
+  vec2 offset = vec2(randomOffset , randomOffset) * explosionTime * 0.1;
   offset.x /= aspect;
 
-  float zOffset = explosion * explosionTime * 3.0;
+  float zOffset = explosionTime * 3.0;
 
   vec3 p = vec3(position.xy + offset, position.z + zOffset);
   gl_Position = vec4(p, 1.0);
+  vColor = vec4(color);
 
-  vec3 heat = vec3(1.0, 0.5, 0.0) * explosion * explosionTime;
-  vColor = vec4(color.rgb + heat, color.a);
-
-  gl_PointSize = mix(3.0, 35.0, explosion * explosionTime);
+  // マウスに近いほど小さくなる
+  gl_PointSize = mix(15.0, 30.0, explosion);
 }

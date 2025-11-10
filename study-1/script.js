@@ -1,249 +1,384 @@
-
 /** ===========================================================================
- * このサンプルは、GLSL のその他のルールや仕様を解説するためのサンプルです。
- * 頂点シェーダ側に解説コメントが大量に記述されていますので、GLSL を記述するうえ
- * での最低限のルールを把握しておきましょう。
- * JavaScript のほうは変更箇所はなく、シェーダは少しだけ変更してあります。
+ * ASCII Art Effect with Video Particles
+ * bitnb.io風のASCIIエフェクトを実装
+ * 2パスレンダリング:
+ *   Pass 1: 動画パーティクルをフレームバッファに描画
+ *   Pass 2: フレームバッファのテクスチャをASCII化して画面に描画
  * ========================================================================= */
 
 import { WebGLUtility, ShaderProgram } from '../lib/webgl.js';
 import { Pane } from '../lib/tweakpane-4.0.0.min.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
-  // WebGLApp クラスの初期化とリサイズ処理の設定
   const app = new WebGLApp();
   window.addEventListener('resize', app.resize, false);
-  // アプリケーションのロードと初期化
   app.init('webgl-canvas');
   await app.load();
-  // セットアップして描画を開始
   app.setup();
   app.render();
 }, false);
 
 class WebGLApp {
-  /**
-   * @constructor
-   */
   constructor() {
-    // 汎用的なプロパティ
     this.canvas = null;
     this.gl = null;
     this.running = false;
 
-    // this を固定するためメソッドをバインドする
     this.resize = this.resize.bind(this);
     this.render = this.render.bind(this);
 
-    // uniform 変数用
-    this.uPointSize = 1.0;
-    this.uMouse = [0.0, 0.0]; // マウス座標用
-    this.startTime = Date.now(); // 追加
+    // Particle用のパラメータ
+    this.uMouse = [0.0, 0.0];
+    this.startTime = Date.now();
+    
+    // ASCII用のパラメータ
+    this.asciiParams = {
+      tileSize: 10.0,
+      tileStrength: 1.0,
+      colorStep: 0.1,
+      bioMode: false,
+    };
 
-
-    // マウス座標用のイベントを設定
+    // マウスイベント
     window.addEventListener('pointermove', (mouseEvent) => {
       const x = mouseEvent.pageX / window.innerWidth;
       const y = mouseEvent.pageY / window.innerHeight;
       const signedX = x * 2.0 - 1.0;
       const signedY = y * 2.0 - 1.0;
-
       this.uMouse[0] = signedX;
-      this.uMouse[1] = -signedY; // スクリーン空間とは正負が逆
+      this.uMouse[1] = -signedY;
     }, false);
   }
-  /**
-   * シェーダやテクスチャ用の画像など非同期で読み込みする処理を行う。
-   * @return {Promise}
-   */
+
   async load() {
-    const vs = await WebGLUtility.loadFile('./main.vert');
-    const fs = await WebGLUtility.loadFile('./main.frag');
-    this.shaderProgram = new ShaderProgram(this.gl, {
-      vertexShaderSource: vs,
-      fragmentShaderSource: fs,
-      attribute: [
-        'position',
-        'color',
-      ],
-      stride: [
-        3,
-        4,
-      ],
+    // パーティクル用シェーダー
+    const particleVs = await WebGLUtility.loadFile('./main.vert');
+    const particleFs = await WebGLUtility.loadFile('./main.frag');
+    this.particleProgram = new ShaderProgram(this.gl, {
+      vertexShaderSource: particleVs,
+      fragmentShaderSource: particleFs,
+      attribute: ['position', 'color'],
+      stride: [3, 4],
+      uniform: ['mouse', 'resolution', 'time'],
+      type: ['uniform2fv', 'uniform2fv', 'uniform1f'],
+    });
+
+    // ASCII用シェーダー
+    const asciiVs = await WebGLUtility.loadFile('./ascii.vert');
+    const asciiFs = await WebGLUtility.loadFile('./ascii.frag');
+    this.asciiProgram = new ShaderProgram(this.gl, {
+      vertexShaderSource: asciiVs,
+      fragmentShaderSource: asciiFs,
+      attribute: ['position', 'uv'],
+      stride: [3, 2],
       uniform: [
-        'mouse',
-        'resolution',
-        'time',
+        'uResolution',
+        'uTextureSize',
+        'uTexture',
+        'uAsciiMap',
+        'uAsciiColorStep',
+        'uTileSize',
+        'uTileStrength',
+        'uBioMode',
       ],
       type: [
         'uniform2fv',
         'uniform2fv',
+        'uniform1i',
+        'uniform1i',
         'uniform1f',
+        'uniform1f',
+        'uniform1f',
+        'uniform1i',
       ],
     });
 
-    // 動画を読み込む
     await this.loadVideo('./44019-437624507_tiny.mp4');
   }
 
-
-  /**
-   * 動画を読み込むヘルパー関数
-   */
   loadVideo(src) {
-  return new Promise((resolve, reject) => {
-    this.video = document.createElement('video');
-    this.video.src = src;
-    this.video.loop = true;
-    this.video.muted = true;
-    this.video.crossOrigin = 'anonymous';
-    
-    this.video.addEventListener('loadedmetadata', () => {
-      // Canvas準備
-      this.videoCanvas = document.createElement('canvas');
-      this.videoCtx = this.videoCanvas.getContext('2d');
-      this.videoCanvas.width = this.video.videoWidth;
-      this.videoCanvas.height = this.video.videoHeight;
+    return new Promise((resolve, reject) => {
+      this.video = document.createElement('video');
+      this.video.src = src;
+      this.video.loop = true;
+      this.video.muted = true;
+      this.video.crossOrigin = 'anonymous';
       
-      this.video.play();
-      resolve();
+      this.video.addEventListener('loadedmetadata', () => {
+        this.videoCanvas = document.createElement('canvas');
+        this.videoCtx = this.videoCanvas.getContext('2d');
+        this.videoCanvas.width = this.video.videoWidth;
+        this.videoCanvas.height = this.video.videoHeight;
+        this.video.play();
+        resolve();
+      });
+      
+      this.video.addEventListener('error', reject);
     });
-    
-    this.video.addEventListener('error', reject);
-  });
-}
+  }
 
-  /**
-   * WebGL のレンダリングを開始する前のセットアップを行う。
-   */
   setup() {
-    this.setupGeometry();
+    const gl = this.gl;
+    
+    this.setupParticleGeometry();
+    this.setupScreenQuad();
+    this.createFramebuffer();
+    this.createAsciiMap();
+    
     this.resize();
-    this.gl.clearColor(0.1, 0.1, 0.1, 1.0);
+    gl.clearColor(1.0, 1.0, 1.0, 1.0);
+    
+    // ブレンディングを有効化
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    
+    this.setupGUI();
     this.running = true;
   }
-  /**
-   * ジオメトリ（頂点情報）を構築するセットアップを行う。
-   */
-  setupGeometry() {
+
+  setupParticleGeometry() {
     this.position = [];
     this.color = [];
+    this.SAMPLING = 4;
+    this.ALPHA_THRESHOLD = 10;
 
-    this.SAMPLING = 4; // パーティクル密度
-    this.ALPHA_THRESHOLD = 10; // 透明度閾値
-
-
-    this.vbo = [
+    this.particleVbo = [
       WebGLUtility.createVbo(this.gl, this.position),
       WebGLUtility.createVbo(this.gl, this.color),
     ];
   }
 
-  /**
- * 動画から現在のフレームのパーティクルを更新
- */
-updateParticlesFromVideo() {
-  // 配列をリセット
-  this.position = [];
-  this.color = [];
-  
-  // 現在のフレームを描画
-  this.videoCtx.drawImage(this.video, 0, 0);
-  const imageData = this.videoCtx.getImageData(
-    0, 0, 
-    this.videoCanvas.width, 
-    this.videoCanvas.height
-  );
-  const pixels = imageData.data;
-  
-  const width = this.videoCanvas.width;
-  const height = this.videoCanvas.height;
-  
-  // ピクセルをサンプリングしてパーティクル化
-  for (let y = 0; y < height; y += this.SAMPLING) {
-    for (let x = 0; x < width; x += this.SAMPLING) {
-      const i = (y * width + x) * 4;
-      const r = pixels[i];
-      const g = pixels[i + 1];
-      const b = pixels[i + 2];
-      const a = pixels[i + 3];
+  setupScreenQuad() {
+    // フルスクリーンクワッド（画面全体を覆う四角形）
+    const position = [
+      -1.0,  1.0, 0.0,
+       1.0,  1.0, 0.0,
+      -1.0, -1.0, 0.0,
+       1.0, -1.0, 0.0,
+    ];
+    
+    const uv = [
+      0.0, 1.0,
+      1.0, 1.0,
+      0.0, 0.0,
+      1.0, 0.0,
+    ];
 
-      const isWhiteBackground = r > 250 && g > 250 && b > 250;
+    this.quadVbo = [
+      WebGLUtility.createVbo(this.gl, position),
+      WebGLUtility.createVbo(this.gl, uv),
+    ];
+  }
 
-      if (a > this.ALPHA_THRESHOLD && !isWhiteBackground) {
-        // 座標を -1.0 ~ 1.0 の範囲に正規化
-        const normalizedX = (x / width) * 2.0 - 1.0;
-        const normalizedY = -((y / height) * 2.0 - 1.0); // Y軸反転
-        
-        this.position.push(normalizedX, normalizedY, 0.0);
+  createFramebuffer() {
+    const gl = this.gl;
+    const width = this.canvas.width;
+    const height = this.canvas.height;
 
-        this.color.push(
-          r / 255,
-          g / 255,
-          b / 255,
-          a / 255
-        );
+    // フレームバッファ作成
+    this.framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+
+    // カラーテクスチャ作成
+    this.renderTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.renderTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    // テクスチャをフレームバッファに関連付け
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.renderTexture, 0);
+
+    // フレームバッファのステータス確認
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      console.error('Framebuffer is not complete:', status);
+    }
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
+  createAsciiMap() {
+    const gl = this.gl;
+    
+    // ASCII文字列（明るい順）
+    const chars = ' .:-=+*#%@';
+    const charCount = chars.length;
+    const fontSize = 32;
+    const charWidth = fontSize * 0.6;
+    
+    // Canvasを作成
+    const canvas = document.createElement('canvas');
+    canvas.width = charWidth * charCount;
+    canvas.height = fontSize;
+    const ctx = canvas.getContext('2d');
+    
+    // 背景を黒に
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // 文字を白で描画
+    ctx.fillStyle = 'white';
+    ctx.font = `${fontSize}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    for (let i = 0; i < charCount; i++) {
+      ctx.fillText(chars[i], charWidth * i + charWidth / 2, fontSize / 2);
+    }
+    
+    // テクスチャ作成
+    this.asciiTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.asciiTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
+  updateParticlesFromVideo() {
+    this.position = [];
+    this.color = [];
+    
+    this.videoCtx.drawImage(this.video, 0, 0);
+    const imageData = this.videoCtx.getImageData(0, 0, this.videoCanvas.width, this.videoCanvas.height);
+    const pixels = imageData.data;
+    
+    const width = this.videoCanvas.width;
+    const height = this.videoCanvas.height;
+    
+    for (let y = 0; y < height; y += this.SAMPLING) {
+      for (let x = 0; x < width; x += this.SAMPLING) {
+        const i = (y * width + x) * 4;
+        const r = pixels[i];
+        const g = pixels[i + 1];
+        const b = pixels[i + 2];
+        const a = pixels[i + 3];
+
+        const isWhiteBackground = r > 250 && g > 250 && b > 250;
+
+        if (a > this.ALPHA_THRESHOLD && !isWhiteBackground) {
+          const normalizedX = (x / width) * 2.0 - 1.0;
+          const normalizedY = -((y / height) * 2.0 - 1.0);
+          
+          this.position.push(normalizedX, normalizedY, 0.0);
+          this.color.push(r / 255, g / 255, b / 255, a / 255);
+        }
       }
     }
+
+    if (this.particleVbo) {
+      this.particleVbo.forEach(vbo => this.gl.deleteBuffer(vbo));
+    }
+
+    this.particleVbo = [
+      WebGLUtility.createVbo(this.gl, this.position),
+      WebGLUtility.createVbo(this.gl, this.color),
+    ];
   }
 
-  // VBOを更新
-  if (this.vbo) {
-    this.vbo.forEach(vbo => this.gl.deleteBuffer(vbo));
-  }
-
-  this.vbo = [
-    WebGLUtility.createVbo(this.gl, this.position),
-    WebGLUtility.createVbo(this.gl, this.color),
-  ];
-}
-
-  /**
-   * WebGL を利用して描画を行う。
-   */
   render() {
     const gl = this.gl;
 
-    // running が true の場合は requestAnimationFrame を呼び出す
     if (this.running === true) {
       requestAnimationFrame(this.render);
     }
 
-    // 動画から毎フレームパーティクルを更新
     if (this.video && this.video.readyState >= 2) {
       this.updateParticlesFromVideo();
     }
 
-    // ビューポートの設定と背景のクリア
+    const time = (Date.now() - this.startTime) * 0.001;
+
+    // Pass 1: パーティクルをフレームバッファに描画
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-     const time = (Date.now() - this.startTime) * 0.001;
-
-    // プログラムオブジェクトを指定し、VBO と uniform 変数を設定
-    this.shaderProgram.use();
-    this.shaderProgram.setAttribute(this.vbo);
-    this.shaderProgram.setUniform([
-      this.uMouse, // マウス座標用
+    this.particleProgram.use();
+    this.particleProgram.setAttribute(this.particleVbo);
+    this.particleProgram.setUniform([
+      this.uMouse,
       [this.canvas.width, this.canvas.height],
       time,
     ]);
-
-    // 設定済みの情報を使って、頂点を画面にレンダリングする
     gl.drawArrays(gl.POINTS, 0, this.position.length / 3);
+
+    // Pass 2: フレームバッファのテクスチャをASCII化して画面に描画
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    this.asciiProgram.use();
+    this.asciiProgram.setAttribute(this.quadVbo);
+    
+    // テクスチャをバインド
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.renderTexture);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.asciiTexture);
+    
+    this.asciiProgram.setUniform([
+      [this.canvas.width, this.canvas.height],
+      [this.canvas.width, this.canvas.height],
+      0,
+      1,
+      this.asciiParams.colorStep,
+      this.asciiParams.tileSize,
+      this.asciiParams.tileStrength,
+      this.asciiParams.bioMode ? 1 : 0,
+    ]);
+    
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
-  /**
-   * リサイズ処理を行う。
-   */
+
+  setupGUI() {
+    const pane = new Pane();
+    
+    pane.addBinding(this.asciiParams, 'tileSize', {
+      label: 'Tile Size',
+      min: 10,
+      max: 100,
+      step: 1,
+    });
+    
+    pane.addBinding(this.asciiParams, 'tileStrength', {
+      label: 'Tile Strength',
+      min: 0.5,
+      max: 2.0,
+      step: 0.1,
+    });
+    
+    pane.addBinding(this.asciiParams, 'colorStep', {
+      label: 'Color Step',
+      min: 0.05,
+      max: 0.2,
+      step: 0.01,
+    });
+    
+    pane.addBinding(this.asciiParams, 'bioMode', {
+      label: 'Bio Mode',
+    });
+  }
+
   resize() {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
+    
+    // フレームバッファのリサイズ
+    if (this.framebuffer) {
+      const gl = this.gl;
+      gl.bindTexture(gl.TEXTURE_2D, this.renderTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+    }
   }
-  /**
-   * WebGL を実行するための初期化処理を行う。
-   * @param {HTMLCanvasElement|string} canvas - canvas への参照か canvas の id 属性名のいずれか
-   * @param {object} [option={}] - WebGL コンテキストの初期化オプション
-   */
+
   init(canvas, option = {}) {
     if (canvas instanceof HTMLCanvasElement === true) {
       this.canvas = canvas;
@@ -262,4 +397,3 @@ updateParticlesFromVideo() {
     }
   }
 }
-
