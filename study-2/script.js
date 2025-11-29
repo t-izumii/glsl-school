@@ -35,14 +35,14 @@ class WebGLApp {
     this.previousTime = 0;
     this.timeScale = 0.0;
     this.uTime = 0.0;
-    this.uRatio = 0.7;
+    this.uRatio = 0.2;
     this.uPointSize = 23;
     this.uThreshold = 0.1;
     this.uGap = 0.15;
     this.gridSize =32;
     this.mousePos = [0.0, 0.0];
     this.uHoverRadius = 0.6;
-    this.uHoverStrength = 1.0;
+    this.uHoverStrength = 0.6;
 
     // 動画要素用
     this.video0 = null;
@@ -240,8 +240,8 @@ class WebGLApp {
     });
 
     // 動画を読み込む
-    this.video0 = await this.createVideo('./2324293-hd_1280_720_25fps.mp4');
-    this.video1 = await this.createVideo('./14790539_1080_1920_24fps.mp4');
+    this.video0 = await this.createVideo('./11041434-hd_1280_720_30fps.mp4');
+    this.video1 = await this.createVideo('./12392564_1440_1080_60fps.mp4');
     
     // 動画用テクスチャを作成
     this.texture0 = this.createTextureFromVideo(this.video0);
@@ -271,7 +271,7 @@ class WebGLApp {
     this.running = true;
     this.previousTime = Date.now();
 
-    gl.clearColor(0.05, 0.05, 0.05, 1.0);
+    gl.clearColor(0.05, 0.05, 0.05, 0.8);
     gl.clearDepth(1.0);
     gl.enable(gl.DEPTH_TEST);
     
@@ -296,8 +296,15 @@ class WebGLApp {
       // マウス位置を -1 〜 1 に正規化
       const rect = this.canvas.getBoundingClientRect();
       const x = ((e.clientX - rect.left) / rect.width) * 2.0 - 1.0;
-      const y = -(((e.clientY - rect.top) / rect.height) * 2.0 - 1.0); // Yは反転
-      this.mousePos = [x, y];
+      const y = -(((e.clientY - rect.top) / rect.height) * 2.0 - 1.0);
+      
+      // カメラの視野角と距離に合わせてスケール
+      const fovy = 60;
+      const distance = 3.0;
+      const scale = Math.tan(fovy * 0.5 * Math.PI / 180) * distance;
+      const aspect = rect.width / rect.height;
+      
+      this.mousePos = [x * scale * aspect, y * scale];
     });
     
     this.canvas.addEventListener('mouseleave', () => {

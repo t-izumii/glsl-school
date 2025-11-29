@@ -31,6 +31,8 @@ void main() {
   // ビデオをサンプリング
   vec4 videoColor0 = texture2D(textureUnit0, cellUV);
   vec4 videoColor1 = texture2D(textureUnit1, cellUV);
+
+  videoColor0.r += 0.8;
   
   // ratioで2つのビデオをミックス
   vec4 outColor = mix(videoColor0, videoColor1, ratio);
