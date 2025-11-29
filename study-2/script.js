@@ -1,14 +1,6 @@
 /** ===========================================================================
- * 単に複数の画像を切替えるだけのシンプルなフェードイン・アウトを、さらに発展さ
- * せるとより奥深い表現が可能になります。
- * ここではフェードする際の係数として利用する係数マップを新たに用意し、シェーダ
- * 内でこれを参照しながらフェードするタイミングがフラグメントごとに変化するよう
- * にしてみます。
- * 係数マップはモノクロの画像として用意し、１チャンネルだけを使います。実案件な
- * どで同様の表現・テクニックを用いる場合は、１つの画像ファイルのなかには４つの
- * チャンネルが存在するので係数マップを最大４枚分まで同時に詰め込んだりすること
- * も可能ですし、そうすることでデータの節約になります。
- * 係数マップの模様を工夫するだけで様々なバリエーションの表現が可能です。
+ * ビデオプロジェクションマッピング
+ * マスク画像を使って、ポイント（頂点）ベースでビデオを投影する
  * ========================================================================= */
 
 import { WebGLUtility, ShaderProgram } from '../lib/webgl.js';
@@ -40,12 +32,16 @@ class WebGLApp {
     this.render = this.render.bind(this);
 
     // 各種パラメータや uniform 変数用
-    this.previousTime = 0; // 直前のフレームのタイムスタンプ
-    this.timeScale = 0.0;  // 時間の進み方に対するスケール
-    this.uTime = 0.0;      // uniform 変数 time 用
-    this.uRatio = 0.0;     // 変化の割合い
+    this.previousTime = 0;
+    this.timeScale = 0.0;
+    this.uTime = 0.0;
+    this.uRatio = 0.5;
+    this.uPointSize = 25.0;   // ポイントサイズ
+    this.uThreshold = 0.85;    // マスクの閾値
+    this.uGap = 0.28;          // ギャップ（0.0〜1.0）
+    this.gridSize = 32;       // グリッドの解像度
 
-    // 動画要素用 @@@
+    // 動画要素用
     this.video0 = null;
     this.video1 = null;
 
@@ -72,34 +68,47 @@ class WebGLApp {
       this.uRatio = v.value;
     });
     pane.addBlade({
-      view: 'list',
-      label: 'monochrome',
-      options: [
-        {text: 'monochrome-0', value: 0},
-        {text: 'monochrome-1', value: 1},
-        {text: 'monochrome-2', value: 2},
-      ],
-      value: 0,
+      view: 'slider',
+      label: 'point-size',
+      min: 1.0,
+      max: 50.0,
+      value: this.uPointSize,
     })
     .on('change', (v) => {
-      const gl = this.gl;
-      gl.activeTexture(gl.TEXTURE2);
-      gl.bindTexture(gl.TEXTURE_2D, this.monochrome[v.value]);
+      this.uPointSize = v.value;
+    });
+    pane.addBlade({
+      view: 'slider',
+      label: 'threshold',
+      min: 0.0,
+      max: 1.0,
+      value: this.uThreshold,
+    })
+    .on('change', (v) => {
+      this.uThreshold = v.value;
+    });
+    pane.addBlade({
+      view: 'slider',
+      label: 'gap',
+      min: 0.0,
+      max: 0.5,
+      value: this.uGap,
+    })
+    .on('change', (v) => {
+      this.uGap = v.value;
     });
   }
 
   /**
    * 動画要素を作成し、再生可能になるまで待機する
-   * @param {string} src - 動画ファイルのパス
-   * @return {Promise<HTMLVideoElement>}
    */
   createVideo(src) {
     return new Promise((resolve, reject) => {
       const video = document.createElement('video');
       video.src = src;
-      video.muted = true;       // ミュートにしないと自動再生できない
-      video.loop = true;        // ループ再生
-      video.playsInline = true; // iOS対応
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
       
       video.addEventListener('canplaythrough', () => {
         video.play();
@@ -116,15 +125,12 @@ class WebGLApp {
 
   /**
    * 動画からテクスチャを作成する
-   * @param {HTMLVideoElement} video - 動画要素
-   * @return {WebGLTexture}
    */
   createTextureFromVideo(video) {
     const gl = this.gl;
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     
-    // 初期化用の仮データ（動画がまだ準備できていない場合用）
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -137,7 +143,6 @@ class WebGLApp {
       new Uint8Array([0, 0, 0, 255])
     );
     
-    // テクスチャパラメータ（NPOT対応）
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -148,8 +153,6 @@ class WebGLApp {
 
   /**
    * 動画テクスチャを更新する
-   * @param {WebGLTexture} texture - 更新するテクスチャ
-   * @param {HTMLVideoElement} video - 動画要素
    */
   updateVideoTexture(texture, video) {
     const gl = this.gl;
@@ -168,7 +171,6 @@ class WebGLApp {
 
   /**
    * シェーダやテクスチャ用の画像など非同期で読み込みする処理を行う。
-   * @return {Promise}
    */
   async load() {
     const vs = await WebGLUtility.loadFile('./main.vert');
@@ -188,8 +190,12 @@ class WebGLApp {
         'mvpMatrix',
         'textureUnit0',
         'textureUnit1',
-        'textureUnit2', // モノクロテクスチャ
+        'textureUnit2',
         'ratio',
+        'pointSize',
+        'threshold',
+        'gap',
+        'gridSize',
       ],
       type: [
         'uniformMatrix4fv',
@@ -197,23 +203,25 @@ class WebGLApp {
         'uniform1i',
         'uniform1i',
         'uniform1f',
+        'uniform1f',
+        'uniform1f',
+        'uniform1f',
+        'uniform1f',
       ],
     });
 
-    // 動画を読み込む @@@
+    // 動画を読み込む
     this.video0 = await this.createVideo('./2421545-hd_1920_1080_30fps.mp4');
-    this.video1 = await this.createVideo('./18905022-hd_1920_1080_24fps (1).mp4');
+    this.video1 = await this.createVideo('./2324293-hd_1280_720_25fps.mp4');
     
-    // 動画用テクスチャを作成 @@@
+    // 動画用テクスチャを作成
     this.texture0 = this.createTextureFromVideo(this.video0);
     this.texture1 = this.createTextureFromVideo(this.video1);
 
-    this.monochrome = [
-      await WebGLUtility.createTextureFromFile(this.gl, './monochrome1.jpg'),
-      await WebGLUtility.createTextureFromFile(this.gl, './monochrome2.jpg'),
-      await WebGLUtility.createTextureFromFile(this.gl, './monochrome3.jpg'),
-    ];
+    // マスク用テクスチャ
+    this.maskTexture = await WebGLUtility.createTextureFromFile(this.gl, './icon.png');
   }
+
   /**
    * WebGL のレンダリングを開始する前のセットアップを行う。
    */
@@ -233,118 +241,134 @@ class WebGLApp {
     this.running = true;
     this.previousTime = Date.now();
 
-    gl.clearColor(0.1, 0.1, 0.1, 1.0);
+    gl.clearColor(0.05, 0.05, 0.05, 1.0);
     gl.clearDepth(1.0);
     gl.enable(gl.DEPTH_TEST);
+    
+    // ブレンディングを有効化（透明度のため）
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    // ３つのユニットにそれぞれテクスチャをバインドしておく
+    // テクスチャをバインド
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.texture1);
     gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, this.monochrome[0]);
+    gl.bindTexture(gl.TEXTURE_2D, this.maskTexture);
   }
+
   /**
-   * ジオメトリ（頂点情報）を構築するセットアップを行う。
+   * グリッド状の頂点を生成する
    */
   setupGeometry() {
-    // 頂点座標
-    this.position = [
-      -1.0,  1.0,  0.0,
-       1.0,  1.0,  0.0,
-      -1.0, -1.0,  0.0,
-       1.0, -1.0,  0.0,
-    ];
-    // テクスチャ座標
-    this.texCoord = [
-      0.0, 0.0,
-      1.0, 0.0,
-      0.0, 1.0,
-      1.0, 1.0,
-    ];
-    // すべての頂点属性を VBO にしておく
+    const positions = [];
+    const texCoords = [];
+    
+    const size = this.gridSize;
+    
+    // グリッド状に頂点を配置
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        // 位置（-1 ~ 1 の範囲）
+        const px = (x / (size - 1)) * 2.0 - 1.0;
+        const py = (y / (size - 1)) * 2.0 - 1.0;
+        const pz = 0.0;
+        
+        positions.push(px, py, pz);
+        
+        // テクスチャ座標（0 ~ 1 の範囲）
+        const u = x / (size - 1);
+        const v = 1.0 - y / (size - 1); // Y反転
+        
+        texCoords.push(u, v);
+      }
+    }
+    
+    this.position = positions;
+    this.texCoord = texCoords;
+    this.vertexCount = size * size;
+    
+    // VBO を作成
     this.vbo = [
       WebGLUtility.createVbo(this.gl, this.position),
       WebGLUtility.createVbo(this.gl, this.texCoord),
     ];
   }
+
   /**
    * WebGL を利用して描画を行う。
    */
   render() {
-    // 短く書けるようにローカル変数に一度代入する
     const gl = this.gl;
     const m4 = WebGLMath.Mat4;
     const v3 = WebGLMath.Vec3;
 
-    // running が true の場合は requestAnimationFrame を呼び出す
     if (this.running === true) {
       requestAnimationFrame(this.render);
     }
 
-    // 直前のフレームからの経過時間を取得
+    // 時間更新
     const now = Date.now();
     const time = (now - this.previousTime) / 1000;
     this.uTime += time * this.timeScale;
     this.previousTime = now;
 
-    // 動画テクスチャを更新 @@@
+    // 動画テクスチャを更新
     gl.activeTexture(gl.TEXTURE0);
     this.updateVideoTexture(this.texture0, this.video0);
     gl.activeTexture(gl.TEXTURE1);
     this.updateVideoTexture(this.texture1, this.video1);
 
-    // ビューポートの設定と背景色・深度値のクリア
+    // ビューポートの設定とクリア
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // - 各種行列を生成する ---------------------------------------------------
-    // モデル座標変換行列
-    const rotateAxis  = v3.create(0.0, 1.0, 0.0);
+    // 行列を生成
+    const rotateAxis = v3.create(0.0, 1.0, 0.0);
     const rotateAngle = this.uTime * 0.2;
     const m = m4.rotate(m4.identity(), rotateAngle, rotateAxis);
 
-    // ビュー座標変換行列（WebGLOrbitCamera から行列を取得する）
     const v = this.camera.update();
 
-    // プロジェクション座標変換行列
-    const fovy   = 60;                                     // 視野角（度数）
-    const aspect = this.canvas.width / this.canvas.height; // アスペクト比
-    const near   = 0.1;                                    // ニア・クリップ面までの距離
-    const far    = 20.0;                                   // ファー・クリップ面までの距離
+    const fovy = 60;
+    const aspect = this.canvas.width / this.canvas.height;
+    const near = 0.1;
+    const far = 20.0;
     const p = m4.perspective(fovy, aspect, near, far);
 
-    // 行列を乗算して MVP 行列を生成する（行列を掛ける順序に注意）
     const vp = m4.multiply(p, v);
     const mvp = m4.multiply(vp, m);
-    // ------------------------------------------------------------------------
 
-    // プログラムオブジェクトを指定し、VBO と uniform 変数を設定
+    // シェーダを使用して描画
     this.shaderProgram.use();
     this.shaderProgram.setAttribute(this.vbo);
     this.shaderProgram.setUniform([
       mvp,
       0,
       1,
-      2, // モノクロの係数テクスチャ
+      2,
       this.uRatio,
+      this.uPointSize,
+      this.uThreshold,
+      this.uGap,
+      this.gridSize,
     ]);
 
-    // 設定済みの情報を使って、頂点を画面にレンダリングする
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, this.position.length / 3);
+    // ポイントとして描画
+    gl.drawArrays(gl.POINTS, 0, this.vertexCount);
   }
+
   /**
-   * リサイズ処理を行う。
+   * リサイズ処理
    */
   resize() {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
   }
+
   /**
-   * WebGL を実行するための初期化処理を行う。
-   * @param {HTMLCanvasElement|string} canvas - canvas への参照か canvas の id 属性名のいずれか
-   * @param {object} [option={}] - WebGL コンテキストの初期化オプション
+   * WebGL を実行するための初期化処理
    */
   init(canvas, option = {}) {
     if (canvas instanceof HTMLCanvasElement === true) {
