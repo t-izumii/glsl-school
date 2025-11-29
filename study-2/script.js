@@ -38,8 +38,11 @@ class WebGLApp {
     this.uRatio = 0.5;
     this.uPointSize = 25.0;   // ポイントサイズ
     this.uThreshold = 0.85;    // マスクの閾値
-    this.uGap = 0.28;          // ギャップ（0.0〜1.0）
-    this.gridSize = 32;       // グリッドの解像度
+    this.uGap = 0.0;          // ギャップ（0.0〜1.0）
+    this.gridSize = 24;       // グリッドの解像度
+    this.mousePos = [0.0, 0.0]; // マウス位置（-1〜1）
+    this.uHoverRadius = 0.3;    // ホバー影響範囲
+    this.uHoverStrength = 0.5;  // ホバーの強さ（Z方向）
 
     // 動画要素用
     this.video0 = null;
@@ -96,6 +99,26 @@ class WebGLApp {
     })
     .on('change', (v) => {
       this.uGap = v.value;
+    });
+    pane.addBlade({
+      view: 'slider',
+      label: 'hover-radius',
+      min: 0.1,
+      max: 1.0,
+      value: this.uHoverRadius,
+    })
+    .on('change', (v) => {
+      this.uHoverRadius = v.value;
+    });
+    pane.addBlade({
+      view: 'slider',
+      label: 'hover-strength',
+      min: 0.1,
+      max: 1.5,
+      value: this.uHoverStrength,
+    })
+    .on('change', (v) => {
+      this.uHoverStrength = v.value;
     });
   }
 
@@ -196,6 +219,9 @@ class WebGLApp {
         'threshold',
         'gap',
         'gridSize',
+        'mousePos',
+        'hoverRadius',
+        'hoverStrength',
       ],
       type: [
         'uniformMatrix4fv',
@@ -207,11 +233,14 @@ class WebGLApp {
         'uniform1f',
         'uniform1f',
         'uniform1f',
+        'uniform2fv',
+        'uniform1f',
+        'uniform1f',
       ],
     });
 
     // 動画を読み込む
-    this.video0 = await this.createVideo('./2421545-hd_1920_1080_30fps.mp4');
+    this.video0 = await this.createVideo('./14790539_1080_1920_24fps.mp4');
     this.video1 = await this.createVideo('./2324293-hd_1280_720_25fps.mp4');
     
     // 動画用テクスチャを作成
@@ -237,6 +266,7 @@ class WebGLApp {
     this.camera = new WebGLOrbitCamera(this.canvas, cameraOption);
 
     this.setupGeometry();
+    this.setupMouseEvents();
     this.resize();
     this.running = true;
     this.previousTime = Date.now();
@@ -256,6 +286,24 @@ class WebGLApp {
     gl.bindTexture(gl.TEXTURE_2D, this.texture1);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.maskTexture);
+  }
+
+  /**
+   * マウスイベントのセットアップ
+   */
+  setupMouseEvents() {
+    this.canvas.addEventListener('mousemove', (e) => {
+      // マウス位置を -1 〜 1 に正規化
+      const rect = this.canvas.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 2.0 - 1.0;
+      const y = -(((e.clientY - rect.top) / rect.height) * 2.0 - 1.0); // Yは反転
+      this.mousePos = [x, y];
+    });
+    
+    this.canvas.addEventListener('mouseleave', () => {
+      // マウスが離れたら画面外に
+      this.mousePos = [10.0, 10.0];
+    });
   }
 
   /**
@@ -353,6 +401,9 @@ class WebGLApp {
       this.uThreshold,
       this.uGap,
       this.gridSize,
+      this.mousePos,
+      this.uHoverRadius,
+      this.uHoverStrength,
     ]);
 
     // ポイントとして描画

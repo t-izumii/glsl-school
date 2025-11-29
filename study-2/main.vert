@@ -3,8 +3,11 @@ attribute vec2 texCoord;
 
 uniform mat4 mvpMatrix;
 uniform float pointSize;
-uniform sampler2D textureUnit2; // マスクテクスチャ
 uniform float gridSize;
+uniform vec2 mousePos;
+uniform float hoverRadius;
+uniform float hoverStrength;
+uniform sampler2D textureUnit2; // マスクテクスチャ
 
 varying vec2 vTexCoord;
 varying float vBrightness;
@@ -21,9 +24,22 @@ void main() {
   // セルサイズを渡す（UV空間での1セルの大きさ）
   vCellSize = 1.0 / gridSize;
   
-  // 平面のまま
-  gl_Position = mvpMatrix * vec4(position, 1.0);
+  // マウス位置との距離を計算
+  float dist = distance(position.xy, mousePos);
   
-  // ポイントサイズ
-  gl_PointSize = pointSize;
+  // 距離に応じてZ座標を手前に
+  float zOffset = 0.0;
+  if (dist < hoverRadius) {
+    float factor = 1.0 - (dist / hoverRadius);
+    zOffset = factor * factor * hoverStrength; // イージング
+  }
+  
+  vec3 pos = position;
+  pos.z += zOffset;
+  
+  gl_Position = mvpMatrix * vec4(pos, 1.0);
+  
+  // ポイントサイズ（ホバー時に少し大きく）
+  float sizeBoost = 1.0 + zOffset * 0.5;
+  gl_PointSize = pointSize * sizeBoost;
 }
