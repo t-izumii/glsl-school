@@ -14,15 +14,17 @@ varying float vBrightness;
 varying float vCellSize;
 
 void main() {
+  // セルの左上角のUV座標を渡す
   vTexCoord = texCoord;
   
-  // マスクの明度を取得
-  vec4 mask = texture2D(textureUnit2, texCoord);
-  float brightness = (mask.r + mask.g + mask.b) / 3.0;
-  vBrightness = 1.0 - brightness;
-  
-  // セルサイズを渡す（UV空間での1セルの大きさ）
+  // セルサイズ
   vCellSize = 1.0 / gridSize;
+  
+  // マスクの明度を取得（セルの中心でサンプリング）
+  vec2 cellCenter = texCoord + vCellSize * 0.5;
+  vec4 mask = texture2D(textureUnit2, cellCenter);
+  float brightness = (mask.r + mask.g + mask.b) / 3.0;
+  vBrightness = brightness;
   
   // マウス位置との距離を計算
   float dist = distance(position.xy, mousePos);
@@ -31,7 +33,7 @@ void main() {
   float zOffset = 0.0;
   if (dist < hoverRadius) {
     float factor = 1.0 - (dist / hoverRadius);
-    zOffset = factor * factor * hoverStrength; // イージング
+    zOffset = factor * factor * hoverStrength;
   }
   
   vec3 pos = position;
@@ -39,7 +41,7 @@ void main() {
   
   gl_Position = mvpMatrix * vec4(pos, 1.0);
   
-  // ポイントサイズ（ホバー時に少し大きく）
+  // ポイントサイズ
   float sizeBoost = 1.0 + zOffset * 0.5;
   gl_PointSize = pointSize * sizeBoost;
 }

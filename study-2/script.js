@@ -35,14 +35,14 @@ class WebGLApp {
     this.previousTime = 0;
     this.timeScale = 0.0;
     this.uTime = 0.0;
-    this.uRatio = 0.5;
-    this.uPointSize = 25.0;   // ポイントサイズ
-    this.uThreshold = 0.85;    // マスクの閾値
-    this.uGap = 0.0;          // ギャップ（0.0〜1.0）
-    this.gridSize = 24;       // グリッドの解像度
-    this.mousePos = [0.0, 0.0]; // マウス位置（-1〜1）
-    this.uHoverRadius = 0.3;    // ホバー影響範囲
-    this.uHoverStrength = 0.5;  // ホバーの強さ（Z方向）
+    this.uRatio = 0.7;
+    this.uPointSize = 23;
+    this.uThreshold = 0.1;
+    this.uGap = 0.15;
+    this.gridSize =32;
+    this.mousePos = [0.0, 0.0];
+    this.uHoverRadius = 0.6;
+    this.uHoverStrength = 1.0;
 
     // 動画要素用
     this.video0 = null;
@@ -240,8 +240,8 @@ class WebGLApp {
     });
 
     // 動画を読み込む
-    this.video0 = await this.createVideo('./14790539_1080_1920_24fps.mp4');
-    this.video1 = await this.createVideo('./2324293-hd_1280_720_25fps.mp4');
+    this.video0 = await this.createVideo('./2324293-hd_1280_720_25fps.mp4');
+    this.video1 = await this.createVideo('./14790539_1080_1920_24fps.mp4');
     
     // 動画用テクスチャを作成
     this.texture0 = this.createTextureFromVideo(this.video0);
@@ -314,21 +314,21 @@ class WebGLApp {
     const texCoords = [];
     
     const size = this.gridSize;
+    const cellSize = 1.0 / size;
     
     // グリッド状に頂点を配置
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        // 位置（-1 ~ 1 の範囲）
-        const px = (x / (size - 1)) * 2.0 - 1.0;
-        const py = (y / (size - 1)) * 2.0 - 1.0;
-        const pz = 0.0;
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        // セルの左上角のUV座標
+        const u = col * cellSize;
+        const v = row * cellSize;
         
-        positions.push(px, py, pz);
+        // セルの中心位置を -1 ~ 1 に変換
+        const cx = (u + cellSize * 0.5) * 2.0 - 1.0;
+        const cy = -((v + cellSize * 0.5) * 2.0 - 1.0); // Y反転
         
-        // テクスチャ座標（0 ~ 1 の範囲）
-        const u = x / (size - 1);
-        const v = 1.0 - y / (size - 1); // Y反転
-        
+        positions.push(cx, cy, 0.0);
+        // UV座標はセルの左上角を渡す
         texCoords.push(u, v);
       }
     }
