@@ -12,6 +12,7 @@ uniform sampler2D textureUnit2; // マスクテクスチャ
 varying vec2 vTexCoord;
 varying float vBrightness;
 varying float vCellSize;
+varying float vHoverFactor; // ホバーの影響度
 
 void main() {
   // セルの左上角のUV座標を渡す
@@ -31,10 +32,13 @@ void main() {
   
   // 距離に応じてZ座標を手前に
   float zOffset = 0.0;
+  float hoverFactor = 0.0;
   if (dist < hoverRadius) {
     float factor = 1.0 - (dist / hoverRadius);
-    zOffset = factor * factor * hoverStrength;
+    hoverFactor = factor * factor; // イージング
+    zOffset = hoverFactor * hoverStrength;
   }
+  vHoverFactor = hoverFactor;
   
   vec3 pos = position;
   pos.z += zOffset;

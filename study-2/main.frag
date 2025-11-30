@@ -10,6 +10,7 @@ uniform float gap;
 varying vec2 vTexCoord;
 varying float vBrightness;
 varying float vCellSize;
+varying float vHoverFactor;
 
 void main() {
   // マスクの明度で表示/非表示を判定
@@ -31,11 +32,13 @@ void main() {
   // ビデオをサンプリング
   vec4 videoColor0 = texture2D(textureUnit0, cellUV);
   vec4 videoColor1 = texture2D(textureUnit1, cellUV);
-
-  videoColor0.r += 0.8;
   
-  // ratioで2つのビデオをミックス
-  vec4 outColor = mix(videoColor0, videoColor1, ratio);
+  // ホバーでratioを0〜1に切り替え
+  float finalRatio = vHoverFactor;
+  
+  videoColor0.r += 0.5;
+  vec4 outColor = mix(videoColor0, videoColor1, finalRatio);
+
   
   gl_FragColor = outColor;
 }

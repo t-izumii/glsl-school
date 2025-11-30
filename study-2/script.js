@@ -35,7 +35,6 @@ class WebGLApp {
     this.previousTime = 0;
     this.timeScale = 0.0;
     this.uTime = 0.0;
-    this.uRatio = 0.2;
     this.uPointSize = 23;
     this.uThreshold = 0.1;
     this.uGap = 0.15;
@@ -59,16 +58,6 @@ class WebGLApp {
     })
     .on('change', (v) => {
       this.timeScale = v.value;
-    });
-    pane.addBlade({
-      view: 'slider',
-      label: 'ratio',
-      min: 0.0,
-      max: 1.0,
-      value: this.uRatio,
-    })
-    .on('change', (v) => {
-      this.uRatio = v.value;
     });
     pane.addBlade({
       view: 'slider',
