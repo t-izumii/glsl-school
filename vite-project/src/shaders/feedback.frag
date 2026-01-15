@@ -73,7 +73,7 @@ void main() {
 
   // ネオングロー（1/距離、線のサイズベース）
   float glow = normalizedLineWidth / (dist + normalizedLineWidth);
-  glow = pow(glow, 2.2);
+  glow = pow(glow, 3.0);
 
   // 線分が短い時はグローを抑える
   glow *= smoothstep(0.0, 0.01, lineLength);

@@ -11,7 +11,7 @@ const params = {
   decayRate: 0.985,
   hueShiftSpeed: 2.0,
   lineWidth: 12.0,
-  glowAmount: 1.5,
+  glowAmount: 20.0,
 };
 
 // === セットアップ ===

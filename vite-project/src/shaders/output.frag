@@ -39,7 +39,7 @@ void main() {
   color = color / (color + vec3(1.0));
 
   // コントラスト強調
-  color = pow(color, vec3(0.95));
+  color = pow(color, vec3(0.99));
 
   // 彩度ブースト（ネオンらしさ）
   float gray = dot(color, vec3(0.299, 0.587, 0.114));
