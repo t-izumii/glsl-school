@@ -32,7 +32,7 @@ void main() {
   }
 
   // ブルームを加算（ネオンの光のにじみ）
-  color += bloom * 0.6;
+  color += bloom * 0.3;
 
   // トーンマッピング（HDR→SDR）
   // Reinhardトーンマッピング

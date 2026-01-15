@@ -1,6 +1,7 @@
 uniform sampler2D tPrev;
 uniform vec2 uMouse;
 uniform vec2 uPrevMouse;
+uniform float uActive;
 uniform vec2 uResolution;
 uniform float uDecay;
 uniform float uHueShift;
@@ -72,7 +73,7 @@ void main() {
 
   // ネオングロー（1/距離、線のサイズベース）
   float glow = normalizedLineWidth / (dist + normalizedLineWidth);
-  glow = pow(glow, 2.0);
+  glow = pow(glow, 2.2);
 
   // 線分が短い時はグローを抑える
   glow *= smoothstep(0.0, 0.01, lineLength);
@@ -89,6 +90,9 @@ void main() {
 
   // グロー強度を適用
   vec3 brushResult = coreColor * intensity * (0.5 + uGlow * 0.3);
+
+  // uActiveが0の時は描画しない
+  brushResult *= uActive;
 
   // 加算合成
   vec3 finalColor = faded + brushResult;

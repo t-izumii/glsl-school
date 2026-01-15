@@ -40,8 +40,9 @@ let rtB = createRenderTarget();
 const feedbackMaterial = new THREE.ShaderMaterial({
   uniforms: {
     tPrev: { value: null },
-    uMouse: { value: new THREE.Vector2() },
-    uPrevMouse: { value: new THREE.Vector2() },
+    uMouse: { value: new THREE.Vector2(0, 0) },
+    uPrevMouse: { value: new THREE.Vector2(0, 0) },
+    uActive: { value: 0.0 },
     uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
     uDecay: { value: params.decayRate },
     uHueShift: { value: params.hueShiftSpeed },
@@ -70,12 +71,14 @@ scene.add(mesh);
 
 // === マウス追跡 ===
 const mouse = {
-  x: -2,
-  y: -2,
-  prevX: -2,
-  prevY: -2,
+  x: 0,
+  y: 0,
+  prevX: 0,
+  prevY: 0,
   active: false,
 };
+
+let hoverTimeout: number | null = null;
 
 // === ヘルパー関数 ===
 // マウス座標を-1〜1の正規化座標に変換
@@ -92,22 +95,19 @@ const updateMousePosition = (clientX: number, clientY: number) => {
 };
 
 const resetMousePosition = () => {
+  // タイムアウトをキャンセル
+  if (hoverTimeout !== null) {
+    clearTimeout(hoverTimeout);
+    hoverTimeout = null;
+  }
   mouse.active = false;
-  mouse.x = -2;
-  mouse.y = -2;
-  mouse.prevX = -2;
-  mouse.prevY = -2;
 };
 
 const updateShaderMouseUniforms = () => {
-  const OFFSCREEN_COORD = -2;
-  const MOVEMENT_THRESHOLD = 0.005; // 正規化座標用の閾値
+  // activeフラグをuniformに渡す
+  feedbackMaterial.uniforms.uActive.value = mouse.active ? 1.0 : 0.0;
 
-  if (!mouse.active) {
-    feedbackMaterial.uniforms.uMouse.value.set(OFFSCREEN_COORD, OFFSCREEN_COORD);
-    feedbackMaterial.uniforms.uPrevMouse.value.set(OFFSCREEN_COORD, OFFSCREEN_COORD);
-    return;
-  }
+  const MOVEMENT_THRESHOLD = 0.005; // 正規化座標用の閾値
 
   const hasMoved =
     Math.abs(mouse.x - mouse.prevX) > MOVEMENT_THRESHOLD ||
@@ -117,29 +117,48 @@ const updateShaderMouseUniforms = () => {
     feedbackMaterial.uniforms.uMouse.value.set(mouse.x, mouse.y);
     feedbackMaterial.uniforms.uPrevMouse.value.set(mouse.prevX, mouse.prevY);
   } else {
-    feedbackMaterial.uniforms.uMouse.value.set(OFFSCREEN_COORD, OFFSCREEN_COORD);
-    feedbackMaterial.uniforms.uPrevMouse.value.set(OFFSCREEN_COORD, OFFSCREEN_COORD);
+    // 動いていない時も同じ位置を設定
+    feedbackMaterial.uniforms.uMouse.value.set(mouse.x, mouse.y);
+    feedbackMaterial.uniforms.uPrevMouse.value.set(mouse.x, mouse.y);
   }
 };
 
 // === イベントリスナー ===
 // マウスイベント
 canvas.addEventListener('mouseenter', () => {
-  mouse.active = true;
+  // 既存のタイムアウトをクリア
+  if (hoverTimeout !== null) {
+    clearTimeout(hoverTimeout);
+  }
+
+  // 0.5秒後にactiveをtrueにする
+  hoverTimeout = window.setTimeout(() => {
+    mouse.active = true;
+    hoverTimeout = null;
+  }, 50);
 });
 
 canvas.addEventListener('mouseleave', resetMousePosition);
 
 canvas.addEventListener('mousemove', (e) => {
   updateMousePosition(e.clientX, e.clientY);
-  mouse.active = true;
 });
 
 // タッチイベント
 canvas.addEventListener('touchstart', (e) => {
   const touch = e.touches[0];
   updateMousePosition(touch.clientX, touch.clientY);
-  mouse.active = true;
+
+  // 既存のタイムアウトをクリア
+  if (hoverTimeout !== null) {
+    clearTimeout(hoverTimeout);
+  }
+
+  // 0.5秒後にactiveをtrueにする
+  hoverTimeout = window.setTimeout(() => {
+    mouse.active = true;
+    hoverTimeout = null;
+  }, 50);
 });
 
 canvas.addEventListener('touchend', resetMousePosition);
